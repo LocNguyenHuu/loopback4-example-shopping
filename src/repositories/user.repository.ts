@@ -18,13 +18,14 @@ export class UserRepository extends DefaultCrudRepository<
   typeof User.prototype.id
 > {
   public orders: HasManyRepositoryFactory<Order, typeof User.prototype.id>;
+  // From @jannyhou: should the relation here be hasOne or hasMany?
 
   constructor(
     @inject('datasources.mongo') protected datasource: juggler.DataSource,
     @repository(OrderRepository) protected orderRepository: OrderRepository,
   ) {
     super(User, datasource);
-    this.orders = this._createHasManyRepositoryFactoryFor(
+    this.orders = this.createHasManyRepositoryFactoryFor(
       'orders',
       async () => orderRepository,
     );

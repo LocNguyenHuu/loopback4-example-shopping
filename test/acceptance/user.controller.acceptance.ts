@@ -4,19 +4,22 @@
 // License text available at https://opensource.org/licenses/MIT
 
 import {Client, expect} from '@loopback/testlab';
+import {Response} from 'supertest';
 import {ShoppingApplication} from '../..';
 import {UserRepository, OrderRepository} from '../../src/repositories';
 import {MongoDataSource} from '../../src/datasources';
 import {setupApplication} from './helper';
 import {createRecommendationServer} from '../../recommender';
 import {Server} from 'http';
+import * as _ from 'lodash';
 const recommendations = require('../../recommender/recommendations.json');
 
 describe('UserController', () => {
   let app: ShoppingApplication;
   let client: Client;
-  const orderRepo = new OrderRepository(new MongoDataSource());
-  const userRepo = new UserRepository(new MongoDataSource(), orderRepo);
+  const mongodbDS = new MongoDataSource();
+  const orderRepo = new OrderRepository(mongodbDS);
+  const userRepo = new UserRepository(mongodbDS, orderRepo);
 
   const user = {
     email: 'test@loopback.io',
@@ -127,6 +130,74 @@ describe('UserController', () => {
       await client
         .get(`/users/${newUser.id}/recommend`)
         .expect(200, recommendations);
+    });
+  });
+
+  describe('authentication functions', () => {
+    it('login returns a valid token', async () => {
+      const newUser = await userRepo.create(user);
+      await client
+        .post('/users/login')
+        .send({email: newUser.email, password: newUser.password})
+        .expect(200)
+        .then(getToken);
+
+      function getToken(res: Response) {
+        // is it good to return the token as text?
+        const token = res.text;
+        expect(token).to.not.be.empty();
+      }
+    });
+
+    it('login returns an error when invalid credentials are used', async () => {
+      const newUser = await userRepo.create(user);
+      newUser.password = 'wrong password';
+      await client
+        .post('/users/login')
+        .send({email: newUser.email, password: newUser.password})
+        .expect(401);
+    });
+
+    it('/me returns the current user', async () => {
+      const newUser = await userRepo.create(user);
+      let token = '';
+      await client
+        .post('/users/login')
+        .send({email: newUser.email, password: newUser.password})
+        .expect(200)
+        .then(getToken);
+
+      function getToken(res: Response) {
+        // is it good to return the token as text?
+        token = res.text;
+      }
+      // MongoDB returns an id object we need to convert to string
+      // since the REST API returns a string for the id property.
+      newUser.id = newUser.id.toString();
+      const me = _.pick(newUser.toJSON(), ['id', 'email']);
+
+      await client
+        .get('/users/me')
+        .set('Authorization', token)
+        .expect(200, me);
+    });
+
+    it('/me returns 401 when the token is not provided', async () => {
+      const newUser = await userRepo.create(user);
+      // tslint:disable-next-line:no-unused-variable
+      let token = '';
+      await client
+        .post('/users/login')
+        .send({email: newUser.email, password: newUser.password})
+        .expect(200)
+        .then(getToken);
+
+      function getToken(res: Response) {
+        // is it good to return the token as text?
+        token = res.text;
+      }
+
+      await client.get('/users/me').expect(401);
     });
   });
 
